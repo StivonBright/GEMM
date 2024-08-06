@@ -8,7 +8,7 @@
 #define ceil_div(A,B) (A+B-1)/B
 
 __global__ void gemm(int M,int N,int K,const float *A,const float *B, float *C,const float alpha,const float beta){
-    
+  // indices of the block tile  
   const int cRow = blockIdx.y;
   const int cCol = blockIdx.x;
 
