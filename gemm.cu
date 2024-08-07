@@ -1,14 +1,16 @@
-#include <stdio.h>
+#include <cstdio>
 #include <iostream>
+#include <time.h>
+#include <cmath>
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
 #define BLOCK_TILE_SIZE 32
-#define THREAD_TILE_SIZE 8
+#define THREAD_TILE_SIZE 4
 #define ceil_div(A,B) (A+B-1)/B
 
 __global__ void gemm(int M,int N,int K,const float *A,const float *B, float *C,const float alpha,const float beta){
-  // indices of the block tile  
+    
   const int cRow = blockIdx.y;
   const int cCol = blockIdx.x;
 
@@ -74,6 +76,14 @@ __global__ void gemm(int M,int N,int K,const float *A,const float *B, float *C,c
 
 }
 
+void randomize_matrix(float *mat, int N) {
+  srand(time(NULL));
+  for (int i = 0; i < N; i++) {
+    float tmp = (float)(rand() % 5) + 0.01 * (rand() % 5);
+    tmp = (rand() % 2 == 0) ? tmp : tmp * (-1.);
+    mat[i] = tmp;
+  }
+}
 
 int main(){
     // dimensions for test data matrix
@@ -82,36 +92,54 @@ int main(){
     const int K = 4096;
 
     // allocating uninitialized matrices
-    float *A, *B, *C;
+    float *A, *B, *C,*host_A, *host_B, *host_C;
     float alpha= 1.0,beta=0.8;
 
+    // random input generation on host side
+    host_A = (float *)malloc(M*K*sizeof(float));
+    host_B = (float *)malloc(K*N*sizeof(float));
+    host_C = (float *)malloc(M*N*sizeof(float));
+
+    randomize_matrix(host_A, M*K);
+    randomize_matrix(host_B, K*N);
+    randomize_matrix(host_C, M*N);
+
+    //allocate device mem
     cudaMalloc((void **)&A, M*K*sizeof(float));
     cudaMalloc((void **)&B, K*N*sizeof(float));
     cudaMalloc((void **)&C, M*N*sizeof(float));
 
+    //transfer input from host to device
+    cudaMemcpy(A, host_A, sizeof(float) * M * K,cudaMemcpyHostToDevice);
+    cudaMemcpy(B, host_B, sizeof(float) * K * N,cudaMemcpyHostToDevice);
+    cudaMemcpy(C, host_C, sizeof(float) * M * N,cudaMemcpyHostToDevice);
     // create as many blocks as necessary to map all of C
     dim3 gridDim(ceil_div(M,BLOCK_TILE_SIZE), ceil_div(N,BLOCK_TILE_SIZE));
     // 1024 thread per block is maximum
-    dim3 blockDim(4 * 4);
-    // no data exchange between host and device, makes it easy for profiling
+    dim3 blockDim(8 * 8);
+    // invoke kernel and get back result
     gemm<<<gridDim, blockDim>>>(M, N, N, A, B, C, alpha, beta);
-    
+    cudaMemcpy(host_C, C, sizeof(float) * M * N,cudaMemcpyDeviceToHost);
     // compare with cuBLAS
     /*cublasHandle_t handle;
     if (cublasCreate(&handle)) {
         std::cerr << "Create cublas handle error." << std::endl;
         exit(EXIT_FAILURE);
     };
-    cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, B, CUDA_R_32F,
-               N, A, CUDA_R_32F, K, &beta, C, CUDA_R_32F, N, CUBLAS_COMPUTE_32F,
+    cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, host_B, CUDA_R_32F,
+               N, host_A, CUDA_R_32F, K, &beta, host_C, CUDA_R_32F, N, CUBLAS_COMPUTE_32F,
                CUBLAS_GEMM_DEFAULT_TENSOR_OP);
     */
     
     cudaFree(A);
     cudaFree(B);
     cudaFree(C);
+    free(host_A);
+    free(host_B);
+    free(host_C);
     cudaError_t err = cudaGetLastError();  // Error log
     if (err != cudaSuccess) std::cout << "CUDA error: " << cudaGetErrorString(err) << std::endl;
     
     return 0;
 }
+
