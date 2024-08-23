@@ -6,7 +6,7 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#define BLOCK_TILE_SIZE 64
+#define BLOCK_TILE_SIZE 128
 #define BK 16
 #define THREAD_TILE_SIZE 8
 #define ceil_div(A,B) (((A)+(B)-1)/(B))
